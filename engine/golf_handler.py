@@ -3,17 +3,14 @@ from engine.anj_loader import COMPETITION_COL, GENRE_COL, RESTRICTION_COL, PHASE
 
 
 def handle_golf_search(user_prompt, df_anj):
-    """Recherche dédiée au Golf avec mapping JO et circuits"""
+    """Recherche Golf avec priorité aux noms exacts"""
     query = user_prompt.lower().strip()
 
-    # Mapping JO et circuits pour faciliter le matching
+    # Mapping universel pour les JO
     mapping = {
         "olympic games": "jeux olympiques",
         "olympic": "jeux olympiques",
-        "jo": "jeux olympiques",
-        "liv": "liv international golf series",
-        "dp world": "dp world tour",
-        "european tour": "dp world tour"
+        "jo": "jeux olympiques"
     }
     for eng, fr in mapping.items():
         query = query.replace(eng, fr)
@@ -23,8 +20,8 @@ def handle_golf_search(user_prompt, df_anj):
         file_name_orig = str(row[COMPETITION_COL])
         file_name_clean = file_name_orig.lower().strip()
 
-        # Test de correspondance par contenu
-        if query in file_name_clean or file_name_clean in query:
+        # 1. MATCH EXACT OU CONTENU : On vérifie si la Ryder Cup ou Solheim Cup est citée
+        if query == file_name_clean or query in file_name_clean:
             matches.append((file_name_orig, 100, row[GENRE_COL]))
 
     return list(set(matches))
@@ -39,17 +36,11 @@ def decide_golf(comp_name: str, df: pd.DataFrame, genre: str = None):
 
         row = df[mask].iloc[0]
 
-        res_val = row[RESTRICTION_COL]
-        pha_val = row[PHASES_COL]
-
-        is_res_none = pd.isna(res_val) or str(res_val).strip().lower() in ['aucune', 'none', 'nan']
-        is_pha_none = pd.isna(pha_val) or str(pha_val).strip().lower() in ['aucune', 'none', 'nan']
-
         return {
             "allowed": True,
             "competition": comp_name,
-            "restrictions": "NONE" if is_res_none else str(res_val),
-            "phases": "ALL" if is_pha_none else str(pha_val),
+            "restrictions": row[RESTRICTION_COL] if not pd.isna(row[RESTRICTION_COL]) else "NONE",
+            "phases": row[PHASES_COL] if not pd.isna(row[PHASES_COL]) else "ALL",
             "source": df.attrs.get('source_ref', "ANJ Source"),
             "country": str(row[COUNTRY_COL]) if not pd.isna(row[COUNTRY_COL]) else "International",
             "sport": "Golf",

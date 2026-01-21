@@ -174,34 +174,45 @@ elif page == "💬 Compliance ChatBot":
                         display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2],
                                                discipline=selected_discipline)
 
-    if st.session_state.awaiting_choice:
-        with st.chat_message("assistant"):
-            if selected_sport != "Golf":
-                st.info("Multiple competitions found. Please specify:")
+        # --- GESTION DES BOUTONS DE CHOIX ---
+        if st.session_state.awaiting_choice:
+            with st.chat_message("assistant"):
+                st.info("Please select an option:")
 
-            for opt in st.session_state.options:
-                g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
-                g_en = g_map.get(opt[2], opt[2])
+                # Utilisation d'un dictionnaire pour dédoublonner par label si nécessaire
+                unique_options = {}
+                for opt in st.session_state.options:
+                    # opt[0] est le nom, opt[2] est le genre (Homme/Femme)
+                    label = opt[0]
+                    if label not in unique_options:
+                        unique_options[label] = opt
 
-                if selected_sport == "Badminton":
-                    label = f"{opt[0]} ({selected_discipline} - {g_en})"
-                else:
-                    label = f"{opt[0]} ({g_en})"
+                for label, opt in unique_options.items():
+                    # On crée un bouton unique pour chaque option réelle
+                    if st.button(label, key=f"btn_{label}_{opt[2]}", width='stretch'):
+                        st.session_state.awaiting_choice = False
 
-                if st.button(label, key=f"btn_{opt[0]}_{opt[2]}_{selected_sport}", width='stretch'):
+                        # Logique pour les circuits génériques (cas Evian)
+                        if opt[1] == 0:
+                            circuit_msg = (
+                                f"For **{opt[2]}** golf, the authorized circuits are: "
+                                "**LPGA Tour**" if opt[
+                                                       2] == "Femme" else "**PGA Tour, DP World Tour, and LIV International Golf Series**."
+                            )
+                            st.session_state.chat_history.append(("assistant", circuit_msg))
+                            st.rerun()
+                        else:
+                            # Logique pour un match réel trouvé dans le fichier (ex: Ryder Cup)
+                            display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2])
+
+                st.markdown("---")
+                label_none = TEMPLATES["en"].get("none_of_above", "None of these options")
+                if st.button(f"🚫 {label_none}", key="btn_none_of_above", width='stretch'):
                     st.session_state.awaiting_choice = False
                     st.session_state.options = []
-                    display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2],
-                                           discipline=selected_discipline)
-
-            st.markdown("---")
-            label_none = TEMPLATES["en"].get("none_of_above", "None of these options")
-            if st.button(f"🚫 {label_none}", key="btn_none_of_above", width='stretch'):
-                st.session_state.awaiting_choice = False
-                st.session_state.options = []
-                msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
-                st.session_state.chat_history.append(("assistant", msg))
-                st.rerun()
+                    msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
+                    st.session_state.chat_history.append(("assistant", msg))
+                    st.rerun()
 
 elif page == "📂 Source Files":
     preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton", "Golf"], key="preview_sport")

@@ -3,15 +3,27 @@ from engine.anj_loader import COMPETITION_COL, GENRE_COL, RESTRICTION_COL, PHASE
 
 
 def handle_golf_search(user_prompt, df_anj):
-    """Recherche dédiée au Golf avec priorité aux mots-clés"""
+    """Recherche dédiée au Golf avec mapping JO et circuits"""
     query = user_prompt.lower().strip()
+
+    # Mapping JO et circuits pour faciliter le matching
+    mapping = {
+        "olympic games": "jeux olympiques",
+        "olympic": "jeux olympiques",
+        "jo": "jeux olympiques",
+        "liv": "liv international golf series",
+        "dp world": "dp world tour",
+        "european tour": "dp world tour"
+    }
+    for eng, fr in mapping.items():
+        query = query.replace(eng, fr)
 
     matches = []
     for idx, row in df_anj.iterrows():
         file_name_orig = str(row[COMPETITION_COL])
         file_name_clean = file_name_orig.lower().strip()
 
-        # Test de correspondance (Exemple: "Ryder" dans "Ryder Cup")
+        # Test de correspondance par contenu
         if query in file_name_clean or file_name_clean in query:
             matches.append((file_name_orig, 100, row[GENRE_COL]))
 

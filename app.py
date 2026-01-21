@@ -3,10 +3,10 @@ import pandas as pd
 from engine.anj_loader import load_anj_data, ANJ_URL
 from engine.football_handler import handle_football_search, decide_football
 from engine.badminton_handler import handle_badminton_search, decide_badminton
-from engine.templates import TEMPLATES, get_emoji, localize_value
 from engine.golf_handler import handle_golf_search, decide_golf
+from engine.templates import TEMPLATES, get_emoji, localize_value
 
-# --- 1. PAGE CONFIGURATION ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Compliance ChatBot", layout="wide")
 
 
@@ -15,15 +15,12 @@ def reset_selection_state():
     st.session_state.options = []
 
 
-# --- 2. SIDEBAR (NAVIGATION MENU) ---
+# --- 2. SIDEBAR ---
 with st.sidebar:
     try:
         st.image("compliance logo.png", width=180)
     except:
-        try:
-            st.image("compliance logo.jpg", width=180)
-        except:
-            st.title("🌐 GIG")
+        st.title("🌐 GIG")
 
     st.subheader("Compliance Center")
     st.divider()
@@ -56,7 +53,6 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
     data['phases'] = localize_value(data['phases'], lang, 'phases')
     data['emoji'] = get_emoji(data.get('country', 'International'))
 
-    # Mapping Men/Women pour l'affichage final
     g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
     data['genre_en'] = g_map.get(data.get('genre'), data.get('genre', 'N/A'))
     data['discipline_en'] = discipline if discipline else "N/A"
@@ -70,16 +66,12 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
 if page == "🏠 Home":
     st.title("🤖 Compliance ChatBot")
     st.subheader("Welcome to your Compliance Assistant.")
-
-    # On charge la source pour l'affichage dynamique
     df_home = load_anj_data(ANJ_URL, "Football")
     DYNAMIC_SOURCE = df_home.attrs.get('source_ref', "ANJ Regulatory List")
 
     st.markdown(f"""
     This tool allows you to instantly check if a competition is authorized by the ANJ.
-
     **Current Regulatory Source:** {DYNAMIC_SOURCE}
-
     ---
     **How to use:**
     1. Navigate to the **Compliance ChatBot** page.
@@ -113,13 +105,20 @@ elif page == "💬 Compliance ChatBot":
         elif selected_sport == "Golf":
             matches = handle_golf_search(user_prompt, df_anj)
 
-        if len(matches) > 1:
+        if len(matches) > 0:
             st.session_state.awaiting_choice = True
             st.session_state.options = matches
+
+            # Message spécifique pour le GOLF
+            if selected_sport == "Golf":
+                msg = (
+                    "Is this a **Men's** or **Women's** tournament?\n\n"
+                    "Depending on your answer, please verify if the competition is part of the following authorized circuits:\n"
+                    "* **Women:** LPGA Tour.\n"
+                    "* **Men:** PGA Tour, DP World Tour, or LIV International Golf Series."
+                )
+                st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
-        elif len(matches) == 1:
-            display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2],
-                                   discipline=selected_discipline)
         else:
             msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
             st.session_state.chat_history.append(("assistant", msg))
@@ -127,11 +126,11 @@ elif page == "💬 Compliance ChatBot":
 
     if st.session_state.awaiting_choice:
         with st.chat_message("assistant"):
-            st.info("Multiple competitions found. Please specify:")
+            st.info("Please specify:")
             for opt in st.session_state.options:
                 g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
                 g_en = g_map.get(opt[2], opt[2])
-                label = f"{opt[0]} ({selected_discipline + ' - ' if selected_discipline else ''}{g_en})"
+                label = f"{opt[0]} ({g_en})"
 
                 if st.button(label, key=f"btn_{opt[0]}_{opt[2]}_{selected_sport}", width='stretch'):
                     st.session_state.awaiting_choice = False
@@ -141,9 +140,8 @@ elif page == "💬 Compliance ChatBot":
 
 elif page == "📂 Source Files":
     st.title("📂 Files and Data")
-    preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton"])
+    preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton", "Golf"])
     df_preview = load_anj_data(ANJ_URL, preview_sport)
-
     st.info(f"Regulatory document: **{df_preview.attrs.get('source_ref')}**")
     st.link_button("🔗 Open ANJ File (Google Drive)", ANJ_URL)
     st.dataframe(df_preview, width='stretch')

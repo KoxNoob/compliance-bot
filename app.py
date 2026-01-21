@@ -139,22 +139,30 @@ elif page == "💬 Compliance ChatBot":
         with st.chat_message("assistant"):
             st.info("Please select an option:")
 
-            # Dédoublonnement intelligent : on garde les doublons pour le Badminton si nécessaire
             for i, opt in enumerate(st.session_state.options):
-                # On affiche le Genre pour aider à différencier au Badminton
+                # Traduction pour l'affichage des boutons
                 g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
-                label = f"{opt[0]} ({g_map.get(opt[2], opt[2])})"
+                gender_display = g_map.get(opt[2], opt[2])
+
+                # Label du bouton (ex: Ryder Cup (Men) ou Women's Tournament)
+                label = f"{opt[0]} ({gender_display})" if opt[1] != 0 else opt[0]
 
                 if st.button(label, key=f"btn_{selected_sport}_{i}_{opt[2]}", width='stretch'):
                     st.session_state.awaiting_choice = False
-                    if opt[1] == 0:  # Cas Evian / Aide Golf
+
+                    if opt[1] == 0:  # Cas pédagogique (Evian / Circuit inconnu)
+                        # Traduction du genre pour la phrase finale
+                        genre_label = "Women" if opt[2] == "Femme" else "Men"
                         circuit_txt = "LPGA Tour" if opt[
                                                          2] == "Femme" else "PGA Tour, DP World Tour, or LIV International Golf Series"
-                        resp = f"For **{opt[2]}** golf, the authorized circuits are: **{circuit_txt}**."
+
+                        resp = f"For **{genre_label}** golf, the authorized circuits are: **{circuit_txt}**."
                         st.session_state.chat_history.append(("assistant", resp))
                     else:
+                        # Cas match trouvé (Ryder Cup, JO, etc.)
                         display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2],
                                                discipline=selected_discipline)
+
                     st.session_state.options = []
                     st.rerun()
 

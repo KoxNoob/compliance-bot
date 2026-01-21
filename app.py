@@ -6,7 +6,7 @@ from engine.badminton_handler import handle_badminton_search, decide_badminton
 from engine.golf_handler import handle_golf_search, decide_golf
 from engine.templates import TEMPLATES, get_emoji, localize_value
 
-# --- 1. PAGE CONFIGURATION ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Compliance ChatBot", layout="wide")
 
 
@@ -15,7 +15,7 @@ def reset_selection_state():
     st.session_state.options = []
 
 
-# --- 2. SIDEBAR (NAVIGATION MENU) ---
+# --- 2. SIDEBAR ---
 with st.sidebar:
     try:
         st.image("compliance logo.png", width=180)
@@ -56,8 +56,8 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
     data['phases'] = localize_value(data['phases'], lang, 'phases')
     data['emoji'] = get_emoji(data.get('country', 'International'))
 
-    gender_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
-    data['genre_en'] = gender_map.get(data.get('genre'), data.get('genre', "N/A"))
+    g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
+    data['genre_en'] = g_map.get(data.get('genre'), data.get('genre', 'N/A'))
     data['discipline_en'] = discipline if discipline else "N/A"
 
     response = TEMPLATES[lang]["allowed"].format(**data)
@@ -69,10 +69,8 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
 if page == "🏠 Home":
     st.title("🤖 Compliance ChatBot")
     st.subheader("Welcome to your Compliance Assistant.")
-
-    # On utilise Football par défaut pour la source dynamique en Home
-    df_anj_home = load_anj_data(ANJ_URL, "Football")
-    DYNAMIC_SOURCE = df_anj_home.attrs.get('source_ref', "ANJ Regulatory List")
+    df_home = load_anj_data(ANJ_URL, "Football")
+    DYNAMIC_SOURCE = df_home.attrs.get('source_ref', "ANJ Regulatory List")
 
     st.markdown(f"""
     This tool allows you to instantly check if a competition is authorized by the ANJ.
@@ -88,7 +86,6 @@ if page == "🏠 Home":
 
 elif page == "💬 Compliance ChatBot":
     st.title("💬 Compliance Q&A")
-
     selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf"], on_change=reset_selection_state)
 
     selected_discipline = None
@@ -113,111 +110,54 @@ elif page == "💬 Compliance ChatBot":
         elif selected_sport == "Golf":
             matches = handle_golf_search(user_prompt, df_anj)
 
-        # --- LOGIQUE DE SORTIE GOLF ---
-        if selected_sport == "Golf":
-            if len(matches) == 1:
-                # MATCH UNIQUE (ex: Ryder Cup) -> Réponse directe
-                display_final_decision(matches[0][0], df_anj, "en", "Golf", genre=matches[0][2])
-            elif len(matches) > 1:
-                # DOUBLON (ex: JO) -> Demander précision
-                st.session_state.awaiting_choice = True
-                st.session_state.options = matches
-                st.rerun()
-            else:
-                # AUCUN MATCH (ex: Evian) -> DÉCLENCHEMENT DE L'AIDE PAR GENRE
-                st.session_state.awaiting_choice = True
-                # On crée des options fictives pour Homme/Femme pour forcer le choix pédagogique
-                st.session_state.options = [("Men's Tournament", 0, "Homme"), ("Women's Tournament", 0, "Femme")]
+        # LOGIQUE DE DÉCISION
+        if len(matches) == 1 and selected_sport != "Badminton":
+            # Cas Ryder Cup : Réponse directe car un seul match trouvé
+            display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2])
+        elif len(matches) > 1 or (len(matches) == 1 and selected_sport == "Badminton"):
+            # Cas avec plusieurs choix ou Badminton
+            st.session_state.awaiting_choice = True
+            st.session_state.options = matches
+            st.rerun()
+        elif len(matches) == 0 and selected_sport == "Golf":
+            # Cas Evian : Mode pédagogique
+            st.session_state.awaiting_choice = True
+            st.session_state.options = [("Men's Tournament", 0, "Homme"), ("Women's Tournament", 0, "Femme")]
 
-                msg = (
-                    "Competition not recognized in the direct list. However, it might be allowed if it belongs to a major circuit.\n\n"
-                    "Is this a **Men's** or **Women's** tournament?\n\n"
-                    "💡 *Note: **LPGA Tour** is authorized for women. **PGA Tour**, **DP World Tour**, and **LIV International Golf Series** are authorized for men.*"
-                )
-                st.chat_message("assistant").markdown(msg)
-                st.session_state.chat_history.append(("assistant", msg))
-                st.rerun()
-
-        # --- LOGIQUE STANDARD (FOOT/BAD) ---
+            msg = (
+                "Competition not recognized in the direct list. However, it might be allowed if it belongs to a major circuit.\n\n"
+                "Is this a **Men's** or **Women's** tournament?\n\n"
+                "💡 *Note: **LPGA Tour** is authorized for women. **PGA Tour**, **DP World Tour**, and **LIV International Golf Series** are authorized for men.*"
+            )
+            st.session_state.chat_history.append(("assistant", msg))
+            st.rerun()
         else:
-            if len(matches) > 1:
-                st.session_state.awaiting_choice = True
-                st.session_state.options = matches
-                st.rerun()
-            elif len(matches) == 1:
-                display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2],
-                                       discipline=selected_discipline)
-            else:
-                msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
-                st.session_state.chat_history.append(("assistant", msg))
-                st.rerun()
+            msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
+            st.session_state.chat_history.append(("assistant", msg))
+            st.rerun()
 
-        # --- GESTION DES BOUTONS DE CHOIX ---
     if st.session_state.awaiting_choice:
         with st.chat_message("assistant"):
             st.info("Please select an option:")
-            for opt in st.session_state.options:
-                label = opt[0]  # Nom de la comp ou "Men's Tournament"
-                if st.button(label, key=f"btn_{label}_{opt[2]}", width='stretch'):
+            for i, opt in enumerate(st.session_state.options):
+                # i garantit une clé unique même si les labels sont identiques
+                if st.button(opt[0], key=f"btn_opt_{i}", width='stretch'):
                     st.session_state.awaiting_choice = False
-
-                    if opt[1] == 0:  # C'est un choix de circuit (Evian case)
-                        circuit_msg = (
-                                          f"For **{opt[2]}** golf, the authorized circuits are: "
-                                          "**LPGA Tour**" if opt[
-                                                                 2] == "Femme" else "**PGA Tour, DP World Tour, and LIV International Golf Series**."
-                                      ) + ""
-                        st.session_state.chat_history.append(("assistant", circuit_msg))
-                        st.rerun()
+                    if opt[1] == 0:  # Réponse circuit
+                        circuit_txt = "LPGA Tour" if opt[
+                                                         2] == "Femme" else "PGA Tour, DP World Tour, or LIV International Golf Series"
+                        resp = f"For **{opt[2]}** golf, the authorized circuits are: **{circuit_txt}**."
+                        st.session_state.chat_history.append(("assistant", resp))
                     else:
-                        # C'est un match réel (JO ou autre)
                         display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2],
                                                discipline=selected_discipline)
-
-        # --- GESTION DES BOUTONS DE CHOIX ---
-        if st.session_state.awaiting_choice:
-            with st.chat_message("assistant"):
-                st.info("Please select an option:")
-
-                # Utilisation d'un dictionnaire pour dédoublonner par label si nécessaire
-                unique_options = {}
-                for opt in st.session_state.options:
-                    # opt[0] est le nom, opt[2] est le genre (Homme/Femme)
-                    label = opt[0]
-                    if label not in unique_options:
-                        unique_options[label] = opt
-
-                for label, opt in unique_options.items():
-                    # On crée un bouton unique pour chaque option réelle
-                    if st.button(label, key=f"btn_{label}_{opt[2]}", width='stretch'):
-                        st.session_state.awaiting_choice = False
-
-                        # Logique pour les circuits génériques (cas Evian)
-                        if opt[1] == 0:
-                            circuit_msg = (
-                                f"For **{opt[2]}** golf, the authorized circuits are: "
-                                "**LPGA Tour**" if opt[
-                                                       2] == "Femme" else "**PGA Tour, DP World Tour, and LIV International Golf Series**."
-                            )
-                            st.session_state.chat_history.append(("assistant", circuit_msg))
-                            st.rerun()
-                        else:
-                            # Logique pour un match réel trouvé dans le fichier (ex: Ryder Cup)
-                            display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2])
-
-                st.markdown("---")
-                label_none = TEMPLATES["en"].get("none_of_above", "None of these options")
-                if st.button(f"🚫 {label_none}", key="btn_none_of_above", width='stretch'):
-                    st.session_state.awaiting_choice = False
                     st.session_state.options = []
-                    msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
-                    st.session_state.chat_history.append(("assistant", msg))
                     st.rerun()
 
 elif page == "📂 Source Files":
-    preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton", "Golf"], key="preview_sport")
-    df_preview = load_anj_data(ANJ_URL, preview_sport)
     st.title("📂 Files and Data")
+    preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton", "Golf"])
+    df_preview = load_anj_data(ANJ_URL, preview_sport)
     st.info(f"Regulatory document: **{df_preview.attrs.get('source_ref')}**")
     st.link_button("🔗 Open ANJ File (Google Drive)", ANJ_URL)
     st.dataframe(df_preview, width='stretch')

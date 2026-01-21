@@ -4,6 +4,7 @@ from engine.anj_loader import load_anj_data, ANJ_URL
 from engine.football_handler import handle_football_search, decide_football
 from engine.badminton_handler import handle_badminton_search, decide_badminton
 from engine.templates import TEMPLATES, get_emoji, localize_value
+from engine.golf_handler import handle_golf_search, decide_golf
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="Compliance ChatBot", layout="wide")
@@ -46,8 +47,10 @@ if 'options' not in st.session_state: st.session_state.options = []
 def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=None):
     if sport == "Football":
         data = decide_football(comp_name, df, genre=genre)
-    else:
+    elif sport == "Badminton":
         data = decide_badminton(comp_name, df, genre=genre, discipline=discipline)
+    elif sport == "Golf":
+        data = decide_golf(comp_name, df, genre=genre)
 
     data['restrictions'] = localize_value(data['restrictions'], lang, 'restrictions')
     data['phases'] = localize_value(data['phases'], lang, 'phases')
@@ -86,7 +89,7 @@ if page == "🏠 Home":
 
 elif page == "💬 Compliance ChatBot":
     st.title("💬 Compliance Q&A")
-    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton"], on_change=reset_selection_state)
+    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf"], on_change=reset_selection_state)
 
     selected_discipline = None
     if selected_sport == "Badminton":
@@ -105,8 +108,10 @@ elif page == "💬 Compliance ChatBot":
 
         if selected_sport == "Football":
             matches = handle_football_search(user_prompt, df_anj)
-        else:
+        elif selected_sport == "Badminton":
             matches = handle_badminton_search(user_prompt, df_anj, selected_discipline)
+        elif selected_sport == "Golf":
+            matches = handle_golf_search(user_prompt, df_anj)
 
         if len(matches) > 1:
             st.session_state.awaiting_choice = True

@@ -110,25 +110,24 @@ elif page == "💬 Compliance ChatBot":
         elif selected_sport == "Golf":
             matches = handle_golf_search(user_prompt, df_anj)
 
-        # LOGIQUE DE DÉCISION
+        # --- LOGIQUE DE ROUTAGE ---
         if len(matches) == 1 and selected_sport != "Badminton":
-            # Cas Ryder Cup : Réponse directe car un seul match trouvé
             display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2])
-        elif len(matches) > 1 or (len(matches) == 1 and selected_sport == "Badminton"):
-            # Cas avec plusieurs choix ou Badminton
+        elif len(matches) > 0:
             st.session_state.awaiting_choice = True
             st.session_state.options = matches
+            if selected_sport == "Golf" and matches[0][1] == 0:  # Aide circuit
+                msg = (
+                    "Competition not recognized in the direct list. However, it might be allowed if it belongs to a major circuit.\n\n"
+                    "Is this a **Men's** or **Women's** tournament?\n\n"
+                    "💡 *Note: **LPGA Tour** is authorized for women. **PGA Tour**, **DP World Tour**, and **LIV International Golf Series** are authorized for men.*"
+                )
+                st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
-        elif len(matches) == 0 and selected_sport == "Golf":
-            # Cas Evian : Mode pédagogique
+        elif selected_sport == "Golf" and len(matches) == 0:
             st.session_state.awaiting_choice = True
             st.session_state.options = [("Men's Tournament", 0, "Homme"), ("Women's Tournament", 0, "Femme")]
-
-            msg = (
-                "Competition not recognized in the direct list. However, it might be allowed if it belongs to a major circuit.\n\n"
-                "Is this a **Men's** or **Women's** tournament?\n\n"
-                "💡 *Note: **LPGA Tour** is authorized for women. **PGA Tour**, **DP World Tour**, and **LIV International Golf Series** are authorized for men.*"
-            )
+            msg = "Is this a **Men's** or **Women's** tournament?\n\n💡 *Note: **LPGA Tour** (Women), **PGA/DP World/LIV** (Men).*"
             st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
         else:
@@ -139,11 +138,16 @@ elif page == "💬 Compliance ChatBot":
     if st.session_state.awaiting_choice:
         with st.chat_message("assistant"):
             st.info("Please select an option:")
+
+            # Dédoublonnement intelligent : on garde les doublons pour le Badminton si nécessaire
             for i, opt in enumerate(st.session_state.options):
-                # i garantit une clé unique même si les labels sont identiques
-                if st.button(opt[0], key=f"btn_opt_{i}", width='stretch'):
+                # On affiche le Genre pour aider à différencier au Badminton
+                g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
+                label = f"{opt[0]} ({g_map.get(opt[2], opt[2])})"
+
+                if st.button(label, key=f"btn_{selected_sport}_{i}_{opt[2]}", width='stretch'):
                     st.session_state.awaiting_choice = False
-                    if opt[1] == 0:  # Réponse circuit
+                    if opt[1] == 0:  # Cas Evian / Aide Golf
                         circuit_txt = "LPGA Tour" if opt[
                                                          2] == "Femme" else "PGA Tour, DP World Tour, or LIV International Golf Series"
                         resp = f"For **{opt[2]}** golf, the authorized circuits are: **{circuit_txt}**."

@@ -9,67 +9,63 @@ def load_anj_data(url, sheet_name):
         file_id = url.split('/')[-2]
         csv_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
 
-        # --- LOGIQUE PAR SPORT (Ce qui marchait avant) ---
-        if sheet_name == "Billard":  # Pour le Snooker
-            skip_n = 3  # Ligne 4 Excel
-        elif sheet_name in ["Football", "Badminton"]:
-            skip_n = 4  # Ligne 5 Excel
-        else:
-            skip_n = 4  # Par défaut pour Golf et les autres
+        # --- TEST DE LECTURE ---
+        # Si c'est Foot ou Bad, on essaie d'abord skip=4 (Ligne 5)
+        # Mais si on ne trouve pas "Nom commun", on essaie skip=0
 
-        df = pd.read_csv(csv_url, skiprows=skip_n)
+        potential_skips = [4, 3, 0, 1] if sheet_name in ["Football", "Badminton"] else [3, 4, 0]
+        if sheet_name == "Billard": potential_skips = [3, 0]
 
-        # Nettoyage des colonnes
+        df = pd.DataFrame()
+        for s in potential_skips:
+            temp_df = pd.read_csv(csv_url, skiprows=s)
+            # Nettoyage rapide des colonnes pour le test
+            temp_df.columns = [str(c).split('$')[0].strip() for c in temp_df.columns]
+            if "Nom commun" in temp_df.columns:
+                df = temp_df
+                break
+
+        if df.empty:
+            return pd.DataFrame()
+
+        # --- NETTOYAGE FINAL ---
         df.columns = [str(c).split('$')[0].strip().replace('\n', ' ') for c in df.columns]
 
-        # Nettoyage des données : on enlève les lignes vides
         if "Nom commun" in df.columns:
             df = df.dropna(subset=["Nom commun"])
             df["Nom commun"] = df["Nom commun"].astype(str).str.strip()
 
         df.attrs['source_ref'] = f"ANJ Regulatory List"
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 
 def decide_for_sport(comp_name: str, df: pd.DataFrame, sport_name: str):
-    """
-    Tranche selon le sport : gère le Genre pour le Foot/Bad,
-    et l'ignore pour le Snooker.
-    """
+    """Logique stable : Pas de genre pour Golf/Snooker, genre pour le reste."""
     try:
-        # Nettoyage pour la recherche
         comp_name_clean = comp_name.strip()
-        mask = df['Nom commun'].astype(str).str.strip() == comp_name_clean
+        # On cherche dans la colonne 'Nom commun' sans se soucier des espaces
+        mask = df['Nom commun'].astype(str).str.strip().str.lower() == comp_name_clean.lower()
 
         if not mask.any():
             return {"allowed": False, "competition": comp_name}
 
         row = df[mask].iloc[0]
 
-        # Récupération des données communes
-        res = str(row.get('Restrictions', 'Aucune'))
-        pha = str(row.get('Phases', 'Toutes'))
-        cou = str(row.get('Pays', 'N/A'))
-
-        # LOGIQUE PARTICULIÈRE : Genre ou pas Genre
-        if sport_name.lower() == "snooker":
-            gen = "N/A (Non applicable)"
+        # On définit les sports sans genre
+        if sport_name.lower() in ["snooker", "golf", "billard"]:
+            gen = "N/A"
         else:
             gen = str(row.get('Genre', 'Tous'))
 
-        # Blocage auto pour certains termes
-        is_allowed = True
-        if "q-school" in comp_name.lower(): is_allowed = False
-
         return {
-            "allowed": is_allowed,
+            "allowed": "q-school" not in comp_name.lower(),
             "competition": comp_name,
-            "restrictions": res if res != "nan" else "Aucune",
-            "phases": pha if pha != "nan" else "Toutes",
-            "country": cou if cou != "nan" else "N/A",
-            "genre": gen if gen != "nan" else "N/A",
+            "restrictions": str(row.get('Restrictions', 'Aucune')),
+            "phases": str(row.get('Phases', 'Toutes')),
+            "country": str(row.get('Pays', 'N/A')),
+            "genre": gen,
             "sport": sport_name,
             "source": df.attrs.get('source_ref', "ANJ List")
         }
@@ -77,7 +73,7 @@ def decide_for_sport(comp_name: str, df: pd.DataFrame, sport_name: str):
         return {"allowed": False, "competition": comp_name}
 
 
-# Constantes pour les handlers
+# Constantes de compatibilité
 COMPETITION_COL = "Nom commun"
 GENRE_COL = "Genre"
 RESTRICTION_COL = "Restrictions"

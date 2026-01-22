@@ -10,23 +10,33 @@ def load_anj_data(url, sheet_name):
         file_id = url.split('/')[-2]
         csv_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
 
-        # Auto-scan pour trouver la ligne d'en-tête (Ligne 4 ou 5)
+        # 1. Scan pour trouver l'index de la ligne d'en-tête
         df_scan = pd.read_csv(csv_url, header=None, nrows=20)
         found_row_index = None
         for i, row in df_scan.iterrows():
-            if row.astype(str).str.contains("Nom commun", case=False).any():
+            # Recherche plus large pour éviter les problèmes de casse ou d'espaces
+            line_str = " ".join(row.astype(str)).lower()
+            if "nom commun" in line_str:
                 found_row_index = i
                 break
 
         skip_n = found_row_index if found_row_index is not None else 0
+
+        # 2. Chargement réel
         df = pd.read_csv(csv_url, skiprows=skip_n)
 
-        # Nettoyage des colonnes
+        # 3. Nettoyage immédiat des noms de colonnes
         df.columns = [str(c).split('$')[0].strip().replace('\n', ' ') for c in df.columns]
 
-        # Nettoyage des lignes vides
-        if not df.empty:
-            df = df.dropna(how='all', subset=[df.columns[0]])
+        # 4. NETTOYAGE CRUCIAL DES DONNÉES
+        # On supprime les lignes où 'Nom commun' est vide ou contient le nom de la colonne lui-même
+        if "Nom commun" in df.columns:
+            # Enlève les lignes vides
+            df = df.dropna(subset=["Nom commun"])
+            # Enlève les lignes de texte parasites (ex: si le scan a pris une ligne de titre)
+            df = df[df["Nom commun"].astype(str).lower() != "nom commun"]
+            # Nettoyage des espaces blancs dans les données
+            df["Nom commun"] = df["Nom commun"].astype(str).strip()
 
         df.attrs['source_ref'] = f"ANJ List - {sheet_name}"
         return df
@@ -35,36 +45,38 @@ def load_anj_data(url, sheet_name):
 
 
 def decide_for_sport(comp_name: str, df: pd.DataFrame, sport_name: str):
-    """
-    Fonction de décision universelle intégrée au loader.
-    Fonctionne pour Foot (avec Genre) et Snooker (sans Genre).
-    """
     try:
-        # Recherche de la ligne
-        mask = df['Nom commun'] == comp_name
+        # On s'assure que la recherche est insensible à la casse et aux espaces
+        df_clean = df.copy()
+        df_clean['match_col'] = df_clean['Nom commun'].astype(str).strip()
+
+        mask = df_clean['match_col'] == comp_name.strip()
         if not mask.any():
-            return {"allowed": False, "competition": comp_name, "reason": "Not found"}
+            return {"allowed": False, "competition": comp_name, "reason": "Non trouvé dans la liste"}
 
-        row = df[mask].iloc[0]
+        row = df_clean[mask].iloc[0]
 
-        # Récupération sécurisée des colonnes (car elles varient selon le sport)
+        # Récupération avec valeurs par défaut
         res = str(row.get('Restrictions', 'Aucune'))
         pha = str(row.get('Phases', 'Toutes'))
         cou = str(row.get('Pays', 'International'))
-        gen = str(row.get('Genre', 'Open'))  # 'Open' par défaut si la colonne manque
+        gen = str(row.get('Genre', 'Open'))
 
-        # Logique de blocage spécifique (ex: Q-School pour le Snooker)
+        # Logique de blocage spécifique
         allowed = True
-        if "q-school" in comp_name.lower():
+        low_name = comp_name.lower()
+        if "q-school" in low_name:
+            allowed = False
+        if "exhibition" in low_name:
             allowed = False
 
         return {
             "allowed": allowed,
             "competition": comp_name,
-            "restrictions": res if pd.notna(res) and res != "nan" else "Aucune",
-            "phases": pha if pd.notna(pha) and pha != "nan" else "Toutes",
-            "country": cou if pd.notna(cou) and cou != "nan" else "N/A",
-            "genre": gen if pd.notna(gen) and gen != "nan" else "N/A",
+            "restrictions": res if pd.notna(res) and res.lower() != "nan" else "Aucune",
+            "phases": pha if pd.notna(pha) and pha.lower() != "nan" else "Toutes",
+            "country": cou if pd.notna(cou) and cou.lower() != "nan" else "N/A",
+            "genre": gen if pd.notna(gen) and gen.lower() != "nan" else "N/A",
             "sport": sport_name,
             "source": df.attrs.get('source_ref', "ANJ List")
         }
@@ -72,6 +84,7 @@ def decide_for_sport(comp_name: str, df: pd.DataFrame, sport_name: str):
         return {"allowed": False, "competition": comp_name, "error": str(e)}
 
 
+# Constantes de compatibilité
 COMPETITION_COL = "Nom commun"
 GENRE_COL = "Genre"
 RESTRICTION_COL = "Restrictions"

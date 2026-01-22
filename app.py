@@ -1,10 +1,10 @@
 import streamlit as st
-import pandas as pd
 from engine.anj_loader import load_anj_data, ANJ_URL
 from engine.football_handler import handle_football_search, decide_football
 from engine.badminton_handler import handle_badminton_search, decide_badminton
 from engine.golf_handler import handle_golf_search, decide_golf
 from engine.templates import TEMPLATES, get_emoji, localize_value
+from engine.snooker_handler import handle_snooker_search, decide_snooker
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Compliance ChatBot", layout="wide")
@@ -51,6 +51,8 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
         data = decide_badminton(comp_name, df, genre=genre, discipline=discipline)
     elif sport == "Golf":
         data = decide_golf(comp_name, df, genre=genre)
+    elif sport == "Snooker":
+        data = decide_snooker(comp_name, df)
 
     data['restrictions'] = localize_value(data['restrictions'], lang, 'restrictions')
     data['phases'] = localize_value(data['phases'], lang, 'phases')
@@ -86,7 +88,7 @@ if page == "🏠 Home":
 
 elif page == "💬 Compliance ChatBot":
     st.title("💬 Compliance Q&A")
-    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf"], on_change=reset_selection_state)
+    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf", "Snooker"], on_change=reset_selection_state)
 
     selected_discipline = None
     if selected_sport == "Badminton":
@@ -109,6 +111,27 @@ elif page == "💬 Compliance ChatBot":
             matches = handle_badminton_search(user_prompt, df_anj, selected_discipline)
         elif selected_sport == "Golf":
             matches = handle_golf_search(user_prompt, df_anj)
+        elif selected_sport == "Snooker":
+            matches = handle_snooker_search(user_prompt, df_anj)
+
+            if len(matches) == 1:
+                # Si un tournoi spécifique est trouvé (ex: Championnat du Monde)
+                display_final_decision(matches[0][0], df_anj, "en", "Snooker")
+            elif len(matches) > 1:
+                st.session_state.awaiting_choice = True
+                st.session_state.options = matches
+                st.rerun()
+            else:
+                # CAS PÉDAGOGIQUE SNOOKER (Si rien n'est trouvé par nom)
+                st.session_state.awaiting_choice = True
+                st.session_state.options = [("World Snooker Tour (WST)", 0, "Mixte")]
+
+                msg = (
+                    "Competition not recognized. For Snooker, the main authorized circuit is the **WST (World Snooker Tour)**.\n\n"
+                    "⚠️ **Warning:** All matches are authorized *except* for the **Q School** and group stages (phases de poules)."
+                )
+                st.session_state.chat_history.append(("assistant", msg))
+                st.rerun()
 
         # --- LOGIQUE DE ROUTAGE ---
         if len(matches) == 1 and selected_sport != "Badminton":
@@ -150,26 +173,24 @@ elif page == "💬 Compliance ChatBot":
                 if st.button(label, key=f"btn_{selected_sport}_{i}_{opt[2]}", width='stretch'):
                     st.session_state.awaiting_choice = False
 
-                    if opt[1] == 0:  # Cas pédagogique (Evian / Circuit inconnu)
-                        genre_label = "Women" if opt[2] == "Femme" else "Men"
+                    if opt[1] == 0:  # Cas pédagogique
+                        if selected_sport == "Golf":
+                            genre_label = "Women" if opt[2] == "Femme" else "Men"
+                            circuit_txt = "LPGA Tour" if opt[
+                                                             2] == "Femme" else "PGA Tour, DP World Tour, or LIV International Golf Series"
+                            warning = "\n\n⚠️ **Important:** Do not confuse the *PGA Tour* (Authorized) with the *PGA Tour Champions* (Not Authorized)." if \
+                            opt[2] == "Homme" else ""
+                            resp = f"For **{genre_label}** golf, the authorized circuits are: **{circuit_txt}**.{warning}"
 
-                        if opt[2] == "Femme":
-                            circuit_txt = "**LPGA Tour**"
-                            warning_txt = ""
-                        else:
-                            circuit_txt = "**PGA Tour**, **DP World Tour**, or **LIV International Golf Series**"
-                            # AJOUT DE L'AVERTISSEMENT PGA TOUR CHAMPIONS
-                            warning_txt = "\n\n⚠️ **Important:** Do not confuse the *PGA Tour* (Authorized) with the *PGA Tour Champions* (Not Authorized)."
+                        elif selected_sport == "Snooker":  # <-- AJOUT ICI
+                            resp = (
+                                "For **Snooker**, the authorized circuit is the **World Snooker Tour (WST)**.\n\n"
+                                "⚠️ **Restriction:** **Q School** and group stages (phases de poules) are **not authorized**."
+                            )
 
-                        resp = f"For **{genre_label}** golf, the authorized circuits are: {circuit_txt}.{warning_txt}"
                         st.session_state.chat_history.append(("assistant", resp))
-                    else:
-                        # Cas match trouvé
-                        display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2],
-                                               discipline=selected_discipline)
-
-                    st.session_state.options = []
-                    st.rerun()
+                        st.session_state.options = []
+                        st.rerun()
 
 elif page == "📂 Source Files":
     st.title("📂 Files and Data")

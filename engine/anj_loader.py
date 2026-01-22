@@ -70,3 +70,10 @@ def decide_for_sport(comp_name: str, df: pd.DataFrame, sport_name: str):
         }
     except Exception as e:
         return {"allowed": False, "competition": comp_name, "error": str(e)}
+
+
+COMPETITION_COL = "Nom commun"
+GENRE_COL = "Genre"
+RESTRICTION_COL = "Restrictions"
+PHASES_COL = "Phases"
+COUNTRY_COL = "Pays"

@@ -94,8 +94,8 @@ elif page == "💬 Compliance ChatBot":
     if selected_sport == "Badminton":
         selected_discipline = st.radio("Choose Discipline:", ["Singles", "Doubles"], horizontal=True)
 
-
-    df_anj = load_anj_data(ANJ_URL, "Billard" if selected_sport == "Snooker" else selected_sport)
+    target_sheet = "Billard" if selected_sport == "Snooker" else selected_sport
+    df_anj = load_anj_data(ANJ_URL, target_sheet)
 
     DYNAMIC_SOURCE = df_anj.attrs.get('source_ref', "ANJ Regulatory List")
 

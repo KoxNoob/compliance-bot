@@ -17,28 +17,34 @@ DISCIPLINE_COL = "Discipline"
 
 @st.cache_data
 def load_anj_data(url, sheet_name):
-    # Règle par défaut (Football, Badminton, Golf, etc.) : Ligne 5 -> skiprows=4
-    # Exception spécifique (Billard/Snooker) : Ligne 4 -> skiprows=3
-
+    # Règle : Billard est l'exception (Ligne 4), les autres (Foot, Golf, Bad) sont en Ligne 5
     try:
         file_id = url.split('/')[-2]
         csv_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
 
-        # Détermination du saut de ligne
+        # Décalage : 3 pour Billard (Ligne 4), 4 pour les autres (Ligne 5)
         skip_n = 3 if sheet_name == "Billard" else 4
 
-        # Chargement
         df = pd.read_csv(csv_url, skiprows=skip_n)
 
-        # Nettoyage des colonnes (Supprime le $ et les espaces invisibles)
-        df.columns = [str(c).split('$')[0].strip() for c in df.columns]
+        # NETTOYAGE RADICAL DES COLONNES
+        # 1. On enlève les symboles et espaces
+        # 2. On s'assure que "Nom commun" est bien écrit sans fioritures
+        new_cols = []
+        for c in df.columns:
+            clean_c = str(c).split('$')[0].strip()
+            # Cas particulier si l'en-tête contient des retours à la ligne
+            clean_c = clean_c.replace('\n', ' ')
+            new_cols.append(clean_c)
 
-        # Nettoyage des lignes : supprime les lignes vides
-        df = df.dropna(how='all', subset=[df.columns[0]]) if len(df) > 0 else df
+        df.columns = new_cols
+
+        # Sécurité : Si après skiprows le tableau est vide ou décalé
+        if "Nom commun" not in df.columns:
+            st.warning(f"⚠️ Column 'Nom commun' not found in {sheet_name}. Check the Excel line number.")
 
         df.attrs['source_ref'] = "ANJ Regulatory List"
         return df
-
     except Exception as e:
         st.error(f"Error loading {sheet_name}: {e}")
         return pd.DataFrame()

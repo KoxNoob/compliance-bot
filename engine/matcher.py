@@ -44,11 +44,23 @@ def generate_variations(query: str) -> list:
     return [" ".join(c) for c in combos][:15]
 
 
-def get_matches_multiples(user_query: str, df: pd.DataFrame, threshold: int = 65):
-    if df.empty: return []
+def get_matches_multiples(query, df_anj, threshold=60):
+    if df_anj.empty: return []
 
-    user_norm = normalize(user_query)
-    competition_options = df[["Nom commun", "Genre", "Pays"]].drop_duplicates().values.tolist()
+    # --- INITIALISATION DES VARIABLES MANQUANTES ---
+    user_query = query
+    user_norm = normalize(query)
+
+    # --- SÉCURISATION DES COLONNES ---
+    # On identifie les index dynamiquement pour ne pas planter si Genre ou Pays manque
+    cols_in_df = df_anj.columns.tolist()
+
+    # On prépare un dictionnaire pour savoir où est quoi dans 'opt'
+    idx_map = {col: i for i, col in enumerate(["Nom commun", "Genre", "Pays"]) if col in cols_in_df}
+    available_cols = [col for col in ["Nom commun", "Genre", "Pays"] if col in cols_in_df]
+
+    # On ne prend que les colonnes existantes
+    competition_options = df_anj[available_cols].drop_duplicates().values.tolist()
 
     # 1. DÉTECTION DU PAYS
     target_country_key = None
@@ -58,16 +70,18 @@ def get_matches_multiples(user_query: str, df: pd.DataFrame, threshold: int = 65
             target_country_key = key
             break
 
-    # 2. GÉNÉRATION DES VARIANTES (Crucial pour Spanish Cup -> Copa Rey)
+    # 2. GÉNÉRATION DES VARIANTES
     user_variations = generate_variations(user_query)
 
     scored_results = []
     for opt in competition_options:
-        db_name = normalize(opt[0])
-        db_country = str(opt[2]).lower()
+        # Récupération sécurisée des valeurs
+        db_name = normalize(opt[idx_map["Nom commun"]])
+        db_genre = opt[idx_map["Genre"]] if "Genre" in idx_map else "N/A"
+        db_country = str(opt[idx_map["Pays"]]).lower() if "Pays" in idx_map else "international"
+
         combined_target = f"{db_name} {db_country}"
 
-        # On teste chaque variante générée contre le nom en base
         best_var_score = 0
         for var in user_variations:
             var_score = fuzz.token_set_ratio(var, combined_target)
@@ -88,7 +102,8 @@ def get_matches_multiples(user_query: str, df: pd.DataFrame, threshold: int = 65
             score -= 15
 
         if score >= threshold:
-            scored_results.append((opt[0], score, opt[1]))
+            # On stocke (Nom, Score, Genre)
+            scored_results.append((opt[idx_map["Nom commun"]], score, db_genre))
 
     scored_results.sort(key=lambda x: x[1], reverse=True)
     if not scored_results: return []

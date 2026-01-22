@@ -17,34 +17,41 @@ DISCIPLINE_COL = "Discipline"
 
 @st.cache_data
 def load_anj_data(url, sheet_name):
-    # Règle : Billard est l'exception (Ligne 4), les autres (Foot, Golf, Bad) sont en Ligne 5
     try:
         file_id = url.split('/')[-2]
         csv_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
 
-        # Décalage : 3 pour Billard (Ligne 4), 4 pour les autres (Ligne 5)
-        skip_n = 3 if sheet_name == "Billard" else 4
+        # 1. On lit les 20 premières lignes pour scanner l'en-tête
+        df_scan = pd.read_csv(csv_url, header=None, nrows=20)
 
-        df = pd.read_csv(csv_url, skiprows=skip_n)
+        found_row_index = None
+        for i, row in df_scan.iterrows():
+            # On cherche "Nom commun" dans n'importe quelle cellule de la ligne
+            if row.astype(str).str.contains("Nom commun", case=False).any():
+                found_row_index = i
+                break
 
-        # NETTOYAGE RADICAL DES COLONNES
-        # 1. On enlève les symboles et espaces
-        # 2. On s'assure que "Nom commun" est bien écrit sans fioritures
-        new_cols = []
-        for c in df.columns:
-            clean_c = str(c).split('$')[0].strip()
-            # Cas particulier si l'en-tête contient des retours à la ligne
-            clean_c = clean_c.replace('\n', ' ')
-            new_cols.append(clean_c)
+        if found_row_index is None:
+            st.error(f"⚠️ Impossible de trouver 'Nom commun' dans l'onglet {sheet_name}")
+            return pd.DataFrame()
 
-        df.columns = new_cols
+        # LOG DE LA LIGNE DÉTECTÉE
+        # L'index 0 de pandas correspond à la Ligne 1 d'Excel
+        excel_line = found_row_index + 1
+        st.toast(f"ℹ️ {sheet_name}: Headers detected at Excel line {excel_line}")
 
-        # Sécurité : Si après skiprows le tableau est vide ou décalé
-        if "Nom commun" not in df.columns:
-            st.warning(f"⚠️ Column 'Nom commun' not found in {sheet_name}. Check the Excel line number.")
+        # 2. On recharge le DF à partir de la ligne détectée
+        df = pd.read_csv(csv_url, skiprows=found_row_index)
+
+        # 3. Nettoyage des colonnes
+        df.columns = [str(c).split('$')[0].strip().replace('\n', ' ') for c in df.columns]
+
+        # 4. Nettoyage des lignes vides
+        df = df.dropna(how='all', subset=[df.columns[0]]) if len(df) > 0 else df
 
         df.attrs['source_ref'] = "ANJ Regulatory List"
         return df
+
     except Exception as e:
         st.error(f"Error loading {sheet_name}: {e}")
         return pd.DataFrame()

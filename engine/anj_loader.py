@@ -23,7 +23,7 @@ def load_anj_data(url, sheet_name):
         csv_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
 
         # Décalage : 3 pour Billard (Ligne 4), 4 pour les autres (Ligne 5)
-        skip_n = 3 if sheet_name == "Billard" else 4
+        skip_n = 4 if sheet_name == "Billard" else 5
 
         df = pd.read_csv(csv_url, skiprows=skip_n)
 

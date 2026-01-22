@@ -16,44 +16,31 @@ DISCIPLINE_COL = "Discipline"
 
 
 @st.cache_data
-def load_anj_data(url: str, sport_name: str) -> pd.DataFrame:
-    """
-    Loads the ANJ file, extracts the source from line 1 of the specific tab,
-    and cleans the data.
-    """
+def load_anj_data(url, sheet_name):
+    # Règle par défaut (Football, Badminton, Golf, etc.) : Ligne 5 -> skiprows=4
+    # Exception spécifique (Billard/Snooker) : Ligne 4 -> skiprows=3
+
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        content = BytesIO(response.content)
+        file_id = url.split('/')[-2]
+        csv_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
 
-        # 1. EXTRACT DYNAMIC SOURCE (Cell A1)
-        df_meta = pd.read_excel(content, engine='openpyxl', sheet_name=sport_name, nrows=1, header=None)
-        source_val = df_meta.iloc[0, 0] if not df_meta.empty else "ANJ Regulatory List"
+        # Détermination du saut de ligne
+        skip_n = 3 if sheet_name == "Billard" else 4
 
-        content.seek(0)
+        # Chargement
+        df = pd.read_csv(csv_url, skiprows=skip_n)
 
-        # 2. LOAD FULL DATA
-        df = pd.read_excel(content, engine='openpyxl', sheet_name=sport_name, header=None)
+        # Nettoyage des colonnes (Supprime le $ et les espaces invisibles)
+        df.columns = [str(c).split('$')[0].strip() for c in df.columns]
 
-        # Setting headers (Excel line 5 = index 4)
-        df.columns = df.iloc[4]
-        df = df.iloc[5:].reset_index(drop=True)
+        # Nettoyage des lignes : supprime les lignes vides
+        df = df.dropna(how='all', subset=[df.columns[0]]) if len(df) > 0 else df
 
-        # List of columns to propagate (ffill)
-        propagation_cols = ['Sport', 'Discipline', 'Pays', 'Club/Nation', 'Nom générique', 'Genre']
-        cols_to_fill = [col for col in propagation_cols if col in df.columns]
-        df[cols_to_fill] = df[cols_to_fill].ffill(axis=0)
-
-        # Cleaning
-        df = df[df[COMPETITION_COL].notna()]
-
-        # Store metadata
-        df.attrs['source_ref'] = source_val
-        df.attrs['sport_name'] = sport_name
-
+        df.attrs['source_ref'] = "ANJ Regulatory List"
         return df
+
     except Exception as e:
-        st.error(f"Error loading {sport_name} data: {e}")
+        st.error(f"Error loading {sheet_name}: {e}")
         return pd.DataFrame()
 
 

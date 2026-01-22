@@ -8,6 +8,7 @@ def handle_snooker_search(user_prompt, df_anj):
 
     # Mapping pour faciliter la recherche
     mapping = {
+        "snooker" : "billard",
         "world snooker tour": "wst",
         "world championship": "championnat du monde",
         "masters": "masters"

@@ -55,6 +55,13 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
     elif sport == "Snooker":
         data = decide_snooker(comp_name, df)
 
+    # Sécurité si la compétition n'a pas été trouvée (évite le KeyError)
+    if not data.get('allowed') and 'restrictions' not in data:
+        msg = TEMPLATES[lang]["not_found"].format(source=df.attrs.get('source_ref', "ANJ List"))
+        st.session_state.chat_history.append(("assistant", msg))
+        st.rerun()
+        return
+
     data['restrictions'] = localize_value(data['restrictions'], lang, 'restrictions')
     data['phases'] = localize_value(data['phases'], lang, 'phases')
     data['emoji'] = get_emoji(data.get('country', 'International'))
@@ -89,12 +96,14 @@ if page == "🏠 Home":
 
 elif page == "💬 Compliance ChatBot":
     st.title("💬 Compliance Q&A")
-    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf", "Snooker"], on_change=reset_selection_state)
+    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf", "Snooker"],
+                                  on_change=reset_selection_state)
 
     selected_discipline = None
     if selected_sport == "Badminton":
         selected_discipline = st.radio("Choose Discipline:", ["Singles", "Doubles"], horizontal=True)
 
+    # Aiguillage vers l'onglet Billard pour le Snooker
     target_sheet = "Billard" if selected_sport == "Snooker" else selected_sport
     df_anj = load_anj_data(ANJ_URL, target_sheet)
     DYNAMIC_SOURCE = df_anj.attrs.get('source_ref', "ANJ Regulatory List")
@@ -107,7 +116,7 @@ elif page == "💬 Compliance ChatBot":
     if user_prompt and not st.session_state.awaiting_choice:
         st.session_state.chat_history.append(("user", user_prompt))
 
-        # 1. LANCEMENT DE LA RECHERCHE SELON LE SPORT
+        # 1. RECHERCHE
         if selected_sport == "Football":
             matches = handle_football_search(user_prompt, df_anj)
         elif selected_sport == "Badminton":
@@ -117,13 +126,21 @@ elif page == "💬 Compliance ChatBot":
         elif selected_sport == "Snooker":
             matches = handle_snooker_search(user_prompt, df_anj)
 
-        # 2. ANALYSE DES RÉSULTATS
-        if len(matches) == 1 and selected_sport in ["Football", "Golf", "Snooker"]:
-            # Match unique : on fonce vers la décision
+        # 2. LOGIQUE DE ROUTAGE
+        # Match unique et précis (Score >= 90)
+        if len(matches) == 1 and matches[0][1] >= 90 and selected_sport in ["Football", "Golf", "Snooker"]:
             display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2])
 
+        # Cas spécifique SNOOKER : Message pédagogique direct au lieu de boutons compliqués
+        elif selected_sport == "Snooker":
+            msg = (
+                "🔍 **Information:** For Snooker, only professional tournaments belonging to the **World Snooker Tour (WST)** are authorized.\n\n"
+                "This includes major events like the World Championship, The Masters, and the UK Championship."
+            )
+            st.session_state.chat_history.append(("assistant", msg))
+            st.rerun()
+
         elif len(matches) > 0:
-            # Plusieurs choix ou aide nécessaire
             st.session_state.awaiting_choice = True
             st.session_state.options = matches
 
@@ -133,14 +150,16 @@ elif page == "💬 Compliance ChatBot":
                 st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
 
-        elif selected_sport == "Golf" or selected_sport == "Snooker":
-            # Filet de sécurité si 0 résultat
+        elif selected_sport == "Golf":
             st.session_state.awaiting_choice = True
-            if selected_sport == "Golf":
-                st.session_state.options = [("Men's Tournament", 0, "Homme"), ("Women's Tournament", 0, "Femme")]
-            else:  # Snooker
-                st.session_state.options = [("World Snooker Tour (WST)", 100, "N/A")]
+            st.session_state.options = [("Men's Tournament", 0, "Homme"), ("Women's Tournament", 0, "Femme")]
+            msg = "Is this a **Men's** or **Women's** tournament?\n\n💡 *Note: **LPGA Tour** (Women), **PGA/DP World/LIV** (Men).*"
+            st.session_state.chat_history.append(("assistant", msg))
+            st.rerun()
 
+        else:
+            msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
+            st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
 
     if st.session_state.awaiting_choice:
@@ -148,21 +167,13 @@ elif page == "💬 Compliance ChatBot":
             st.info("Please select an option:")
 
             for i, opt in enumerate(st.session_state.options):
-                # 1. Gestion propre des labels de genre
                 g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed", "N/A": "Open"}
-                # Si le genre est N/A (Snooker), on n'affiche pas (N/A) sur le bouton
                 gender_display = g_map.get(opt[2], opt[2])
-
-                if opt[2] == "N/A" or selected_sport == "Snooker":
-                    label = opt[0]
-                else:
-                    label = f"{opt[0]} ({gender_display})" if opt[1] != 0 else opt[0]
+                label = f"{opt[0]} ({gender_display})" if opt[1] != 0 else opt[0]
 
                 if st.button(label, key=f"btn_{selected_sport}_{i}_{opt[2]}", width='stretch'):
                     st.session_state.awaiting_choice = False
 
-                    # 2. LOGIQUE PÉDAGOGIQUE (GOLF)
-                    # On déclenche l'aide si le score est 0 OU si c'est le bouton générique "Men's Tournament"
                     if opt[1] == 0 or "Tournament" in str(opt[0]):
                         genre_label = "Women" if opt[2] == "Femme" else "Men"
                         if opt[2] == "Femme":
@@ -174,17 +185,9 @@ elif page == "💬 Compliance ChatBot":
 
                         resp = f"For **{genre_label}** golf, the authorized circuits are: {circuit_txt}.{warning_txt}"
                         st.session_state.chat_history.append(("assistant", resp))
-
-                    # 3. LOGIQUE DÉCISION (FOOT, BAD, SNOOKER, GOLF MATCHÉ)
                     else:
-                        display_final_decision(
-                            opt[0],
-                            df_anj,
-                            "en",
-                            selected_sport,
-                            genre=opt[2],
-                            discipline=selected_discipline
-                        )
+                        display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2],
+                                               discipline=selected_discipline)
 
                     st.session_state.options = []
                     st.rerun()
@@ -192,7 +195,11 @@ elif page == "💬 Compliance ChatBot":
 elif page == "📂 Source Files":
     st.title("📂 Files and Data")
     preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton", "Golf", "Snooker"])
-    df_preview = load_anj_data(ANJ_URL, preview_sport)
+
+    # Aiguillage correct pour l'aperçu du Snooker
+    target_preview = "Billard" if preview_sport == "Snooker" else preview_sport
+    df_preview = load_anj_data(ANJ_URL, target_preview)
+
     st.info(f"Regulatory document: **{df_preview.attrs.get('source_ref')}**")
     st.link_button("🔗 Open ANJ File (Google Drive)", ANJ_URL)
     st.dataframe(df_preview, width='stretch')

@@ -17,10 +17,6 @@ DISCIPLINE_COL = "Discipline"
 
 @st.cache_data
 def load_anj_data(url: str, sport_name: str) -> pd.DataFrame:
-    """
-    Loads the ANJ file, extracts the source from line 1 of the specific tab,
-    and cleans the data.
-    """
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -35,9 +31,15 @@ def load_anj_data(url: str, sport_name: str) -> pd.DataFrame:
         # 2. LOAD FULL DATA
         df = pd.read_excel(content, engine='openpyxl', sheet_name=sport_name, header=None)
 
-        # Setting headers (Excel line 5 = index 4)
-        df.columns = df.iloc[4]
-        df = df.iloc[5:].reset_index(drop=True)
+        # --- AJUSTEMENT DE LA LIGNE D'EN-TETE ---
+        # Billard = Ligne 4 (index 3), Autres = Ligne 5 (index 4)
+        header_idx = 3 if sport_name == "Billard" else 4
+
+        df.columns = df.iloc[header_idx]
+        df = df.iloc[header_idx + 1:].reset_index(drop=True)
+
+        # Nettoyage des noms de colonnes (enlève les retours à la ligne Excel)
+        df.columns = [str(c).replace('\n', ' ').strip() for c in df.columns]
 
         # List of columns to propagate (ffill)
         propagation_cols = ['Sport', 'Discipline', 'Pays', 'Club/Nation', 'Nom générique', 'Genre']
@@ -58,37 +60,40 @@ def load_anj_data(url: str, sport_name: str) -> pd.DataFrame:
 
 
 def decide_fr_sport(comp_name: str, df: pd.DataFrame, genre: str = None, discipline: str = None):
-    """
-    Queries the DataFrame and handles specific logic, including mapping UI Singles to File Simple.
-    """
     try:
         # 1. Filtrage par nom
         mask = df[COMPETITION_COL].str.lower() == comp_name.lower()
 
-        # 2. Filtrage par Genre (si fourni)
-        if genre:
+        # 2. Filtrage par Genre (Uniquement si la colonne existe ET que le sport n'est pas Golf/Snooker)
+        # On sécurise ici pour éviter le crash si GENRE_COL est absent
+        if genre and GENRE_COL in df.columns and genre != "N/A":
             mask = mask & (df[GENRE_COL].str.lower() == genre.lower())
 
         # 3. Filtrage par Discipline (Singles/Doubles)
-        if discipline:
-            # Mapping anglais UI -> français Excel
+        if discipline and DISCIPLINE_COL in df.columns:
             search_discipline = "Simple" if discipline == "Singles" else "Double"
             mask = mask & (df[DISCIPLINE_COL].str.lower() == search_discipline.lower())
 
-        row = df[mask].iloc[0]
-        restrictions_value = row[RESTRICTION_COL]
-        phases_value = row[PHASES_COL]
+        if not mask.any():
+            return {"allowed": False, "competition": comp_name}
 
-        # --- SPECIFIC FIFA RANKING MODIFICATION ---
+        row = df[mask].iloc[0]
+        restrictions_value = row.get(RESTRICTION_COL)
+        phases_value = row.get(PHASES_COL)
+
+        # --- LOGIQUE FIFA ---
         if str(restrictions_value).strip() == "Classement FIFA **":
             restrictions_code = "Classement FIFA **"
-            phases_code = "** FIFA category A international friendly matches, between two teams both ranked in the top fifty of the FIFA rankings, in force 30 days before the date of the match concerned."
+            phases_code = "** FIFA category A international friendly matches, between two teams both ranked in the top fifty of the FIFA rankings..."
         else:
-            is_restrictions_none = pd.isna(restrictions_value) or str(restrictions_value).strip().lower() == 'aucune'
-            is_phases_none = pd.isna(phases_value) or str(phases_value).strip().lower() == 'aucune'
+            is_restrictions_none = pd.isna(restrictions_value) or str(restrictions_value).strip().lower() in ['aucune',
+                                                                                                              'none']
+            is_phases_none = pd.isna(phases_value) or str(phases_value).strip().lower() in ['aucune', 'all', 'toutes']
+
             restrictions_code = "NONE" if is_restrictions_none else str(restrictions_value)
             phases_code = "ALL" if is_phases_none else str(phases_value)
-            if phases_code != "ALL":
+
+            if phases_code != "ALL" and restrictions_code == "NONE":
                 restrictions_code = "LIMITED_PHASES"
 
         return {
@@ -97,10 +102,10 @@ def decide_fr_sport(comp_name: str, df: pd.DataFrame, genre: str = None, discipl
             "restrictions": restrictions_code,
             "phases": phases_code,
             "source": df.attrs.get('source_ref', "ANJ Source"),
-            "country": str(row[COUNTRY_COL]) if not pd.isna(row[COUNTRY_COL]) else "International",
-            "sport": str(row['Sport']) if 'Sport' in row.index else df.attrs.get('sport_name'),
-            "genre": str(row[GENRE_COL]) if GENRE_COL in row.index else "N/A",
-            "discipline": discipline  # Return the English term used in the UI
+            "country": str(row.get(COUNTRY_COL, "International")),
+            "sport": df.attrs.get('sport_name'),
+            "genre": str(row.get(GENRE_COL, "N/A")),
+            "discipline": discipline if discipline else "N/A"
         }
-    except (IndexError, KeyError):
+    except Exception:
         return {"allowed": False, "competition": comp_name, "source": df.attrs.get('source_ref', "ANJ Source")}

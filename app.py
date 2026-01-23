@@ -5,6 +5,7 @@ from engine.football_handler import handle_football_search, decide_football
 from engine.badminton_handler import handle_badminton_search, decide_badminton
 from engine.golf_handler import handle_golf_search, decide_golf
 from engine.templates import TEMPLATES, get_emoji, localize_value
+from engine.snooker_handler import handle_snooker_search, decide_snooker
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Compliance ChatBot", layout="wide")
@@ -51,6 +52,8 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
         data = decide_badminton(comp_name, df, genre=genre, discipline=discipline)
     elif sport == "Golf":
         data = decide_golf(comp_name, df, genre=genre)
+    elif sport == "Snooker":
+        data = decide_snooker(comp_name, df)
 
     data['restrictions'] = localize_value(data['restrictions'], lang, 'restrictions')
     data['phases'] = localize_value(data['phases'], lang, 'phases')
@@ -86,13 +89,14 @@ if page == "🏠 Home":
 
 elif page == "💬 Compliance ChatBot":
     st.title("💬 Compliance Q&A")
-    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf"], on_change=reset_selection_state)
+    selected_sport = st.selectbox("Choose a sport:", ["Football", "Badminton", "Golf", "Snooker"], on_change=reset_selection_state)
 
     selected_discipline = None
     if selected_sport == "Badminton":
         selected_discipline = st.radio("Choose Discipline:", ["Singles", "Doubles"], horizontal=True)
 
-    df_anj = load_anj_data(ANJ_URL, selected_sport)
+    target_sheet = "Billard" if selected_sport == "Snooker" else selected_sport
+    df_anj = load_anj_data(ANJ_URL, target_sheet)
     DYNAMIC_SOURCE = df_anj.attrs.get('source_ref', "ANJ Regulatory List")
 
     for role, message in st.session_state.chat_history:
@@ -109,9 +113,11 @@ elif page == "💬 Compliance ChatBot":
             matches = handle_badminton_search(user_prompt, df_anj, selected_discipline)
         elif selected_sport == "Golf":
             matches = handle_golf_search(user_prompt, df_anj)
+        elif selected_sport == "Snooker":
+            matches = handle_snooker_search(user_prompt, df_anj)
 
         # --- LOGIQUE DE ROUTAGE ---
-        if len(matches) == 1 and selected_sport != "Badminton":
+        if len(matches) == 1 and selected_sport in ["Football", "Golf", "Snooker"]:
             display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2])
         elif len(matches) > 0:
             st.session_state.awaiting_choice = True
@@ -173,7 +179,7 @@ elif page == "💬 Compliance ChatBot":
 
 elif page == "📂 Source Files":
     st.title("📂 Files and Data")
-    preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton", "Golf"])
+    preview_sport = st.selectbox("Preview data for:", ["Football", "Badminton", "Golf", "Snooker"])
     df_preview = load_anj_data(ANJ_URL, preview_sport)
     st.info(f"Regulatory document: **{df_preview.attrs.get('source_ref')}**")
     st.link_button("🔗 Open ANJ File (Google Drive)", ANJ_URL)

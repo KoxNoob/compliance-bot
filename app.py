@@ -59,8 +59,8 @@ def display_final_decision(comp_name, df, lang, sport, genre=None, discipline=No
     data['phases'] = localize_value(data['phases'], lang, 'phases')
     data['emoji'] = get_emoji(data.get('country', 'International'))
 
-    g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
-    data['genre_en'] = g_map.get(data.get('genre'), data.get('genre', 'N/A'))
+    g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed", "N/A": "Open/Mixed"}
+    data['genre_en'] = g_map.get(data.get('genre'), "Open/Mixed")
     data['discipline_en'] = discipline if discipline else "N/A"
 
     response = TEMPLATES[lang]["allowed"].format(**data)
@@ -116,28 +116,29 @@ elif page == "💬 Compliance ChatBot":
         elif selected_sport == "Snooker":
             matches = handle_snooker_search(user_prompt, df_anj)
 
-        # --- LOGIQUE DE ROUTAGE ---
+        # --- LOGIQUE DE ROUTAGE (Football, Badminton, Golf, Snooker) ---
         if len(matches) == 1 and selected_sport in ["Football", "Golf", "Snooker"]:
             display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2])
+
         elif len(matches) > 0:
             st.session_state.awaiting_choice = True
             st.session_state.options = matches
-            if selected_sport == "Golf" and matches[0][1] == 0:  # Aide circuit
+
+            # Aide spécifique pour le Snooker (WST)
+            if selected_sport == "Snooker" and matches[0][1] < 100:
                 msg = (
-                    "Competition not recognized in the direct list. However, it might be allowed if it belongs to a major circuit.\n\n"
-                    "Is this a **Men's** or **Women's** tournament?\n\n"
-                    "💡 *Note: **LPGA Tour** is authorized for women. **PGA Tour**, **DP World Tour**, and **LIV International Golf Series** are authorized for men.*"
+                    "If you are looking for a professional tournament, it is likely part of the **World Snooker Tour (WST)**.\n\n"
+                    "Most professional events (Masters, World Championship, etc.) are covered under this umbrella."
                 )
                 st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
-        elif selected_sport == "Golf" and len(matches) == 0:
+
+        elif selected_sport == "Snooker" and len(matches) == 0:
+            # Filet de sécurité si 0 résultat pour le Snooker
             st.session_state.awaiting_choice = True
-            st.session_state.options = [("Men's Tournament", 0, "Homme"), ("Women's Tournament", 0, "Femme")]
-            msg = "Is this a **Men's** or **Women's** tournament?\n\n💡 *Note: **LPGA Tour** (Women), **PGA/DP World/LIV** (Men).*"
-            st.session_state.chat_history.append(("assistant", msg))
-            st.rerun()
-        else:
-            msg = TEMPLATES["en"]["not_found"].format(source=DYNAMIC_SOURCE)
+            # On propose le WST par défaut
+            st.session_state.options = [("World Snooker Tour (WST)", 100, "N/A")]
+            msg = "No specific match found. Is this a professional tournament belonging to the **World Snooker Tour (WST)**?"
             st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
 

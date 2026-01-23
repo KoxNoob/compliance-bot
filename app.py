@@ -107,6 +107,7 @@ elif page == "💬 Compliance ChatBot":
     if user_prompt and not st.session_state.awaiting_choice:
         st.session_state.chat_history.append(("user", user_prompt))
 
+        # 1. LANCEMENT DE LA RECHERCHE SELON LE SPORT
         if selected_sport == "Football":
             matches = handle_football_search(user_prompt, df_anj)
         elif selected_sport == "Badminton":
@@ -116,30 +117,30 @@ elif page == "💬 Compliance ChatBot":
         elif selected_sport == "Snooker":
             matches = handle_snooker_search(user_prompt, df_anj)
 
-        # --- LOGIQUE DE ROUTAGE (Football, Badminton, Golf, Snooker) ---
+        # 2. ANALYSE DES RÉSULTATS
         if len(matches) == 1 and selected_sport in ["Football", "Golf", "Snooker"]:
+            # Match unique : on fonce vers la décision
             display_final_decision(matches[0][0], df_anj, "en", selected_sport, genre=matches[0][2])
 
         elif len(matches) > 0:
+            # Plusieurs choix ou aide nécessaire
             st.session_state.awaiting_choice = True
             st.session_state.options = matches
 
-            # Aide spécifique pour le Snooker (WST)
-            if selected_sport == "Snooker" and matches[0][1] < 100:
-                msg = (
-                    "If you are looking for a professional tournament, it is likely part of the **World Snooker Tour (WST)**.\n\n"
-                    "Most professional events (Masters, World Championship, etc.) are covered under this umbrella."
-                )
+            # Cas spécifique Evian / Golf
+            if selected_sport == "Golf" and any("evian" in str(m[0]).lower() for m in matches):
+                msg = "Is this a **Men's** or **Women's** tournament?\n\n💡 *Note: **Evian Championship** is a Women's major.*"
                 st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
 
-        elif selected_sport == "Snooker" and len(matches) == 0:
-            # Filet de sécurité si 0 résultat pour le Snooker
+        elif selected_sport == "Golf" or selected_sport == "Snooker":
+            # Filet de sécurité si 0 résultat
             st.session_state.awaiting_choice = True
-            # On propose le WST par défaut
-            st.session_state.options = [("World Snooker Tour (WST)", 100, "N/A")]
-            msg = "No specific match found. Is this a professional tournament belonging to the **World Snooker Tour (WST)**?"
-            st.session_state.chat_history.append(("assistant", msg))
+            if selected_sport == "Golf":
+                st.session_state.options = [("Men's Tournament", 0, "Homme"), ("Women's Tournament", 0, "Femme")]
+            else:  # Snooker
+                st.session_state.options = [("World Snooker Tour (WST)", 100, "N/A")]
+
             st.rerun()
 
     if st.session_state.awaiting_choice:
@@ -147,33 +148,43 @@ elif page == "💬 Compliance ChatBot":
             st.info("Please select an option:")
 
             for i, opt in enumerate(st.session_state.options):
-                # Traduction pour l'affichage des boutons
-                g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed"}
+                # 1. Gestion propre des labels de genre
+                g_map = {"Homme": "Men", "Femme": "Women", "Mixte": "Mixed", "N/A": "Open"}
+                # Si le genre est N/A (Snooker), on n'affiche pas (N/A) sur le bouton
                 gender_display = g_map.get(opt[2], opt[2])
 
-                # Label du bouton
-                label = f"{opt[0]} ({gender_display})" if opt[1] != 0 else opt[0]
+                if opt[2] == "N/A" or selected_sport == "Snooker":
+                    label = opt[0]
+                else:
+                    label = f"{opt[0]} ({gender_display})" if opt[1] != 0 else opt[0]
 
                 if st.button(label, key=f"btn_{selected_sport}_{i}_{opt[2]}", width='stretch'):
                     st.session_state.awaiting_choice = False
 
-                    if opt[1] == 0:  # Cas pédagogique (Evian / Circuit inconnu)
+                    # 2. LOGIQUE PÉDAGOGIQUE (GOLF)
+                    # On déclenche l'aide si le score est 0 OU si c'est le bouton générique "Men's Tournament"
+                    if opt[1] == 0 or "Tournament" in str(opt[0]):
                         genre_label = "Women" if opt[2] == "Femme" else "Men"
-
                         if opt[2] == "Femme":
                             circuit_txt = "**LPGA Tour**"
                             warning_txt = ""
                         else:
                             circuit_txt = "**PGA Tour**, **DP World Tour**, or **LIV International Golf Series**"
-                            # AJOUT DE L'AVERTISSEMENT PGA TOUR CHAMPIONS
                             warning_txt = "\n\n⚠️ **Important:** Do not confuse the *PGA Tour* (Authorized) with the *PGA Tour Champions* (Not Authorized)."
 
                         resp = f"For **{genre_label}** golf, the authorized circuits are: {circuit_txt}.{warning_txt}"
                         st.session_state.chat_history.append(("assistant", resp))
+
+                    # 3. LOGIQUE DÉCISION (FOOT, BAD, SNOOKER, GOLF MATCHÉ)
                     else:
-                        # Cas match trouvé
-                        display_final_decision(opt[0], df_anj, "en", selected_sport, genre=opt[2],
-                                               discipline=selected_discipline)
+                        display_final_decision(
+                            opt[0],
+                            df_anj,
+                            "en",
+                            selected_sport,
+                            genre=opt[2],
+                            discipline=selected_discipline
+                        )
 
                     st.session_state.options = []
                     st.rerun()

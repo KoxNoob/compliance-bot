@@ -134,8 +134,12 @@ elif page == "💬 Compliance ChatBot":
         # Cas spécifique SNOOKER : Message pédagogique direct au lieu de boutons compliqués
         elif selected_sport == "Snooker":
             msg = (
-                "🔍 **Information:** For Snooker, only professional tournaments belonging to the **World Snooker Tour (WST)** are authorized.\n\n"
-                "This includes major events like the World Championship, The Masters, and the UK Championship."
+                "🔍 **Snooker Regulatory Framework:**\n\n"
+                "Only professional tournaments belonging to the **World Snooker Tour (WST)** are authorized.\n\n"
+                "⚠️ **Major Restrictions:**\n"
+                "* **Authorized Phases:** All matches except **group stages** (phase de poule).\n"
+                "* **Forbidden:** Qualifying tournaments known as **Q-School** are strictly prohibited.\n"
+                "* **Minor Players:** Bets are forbidden on any match involving a player under 18.\n\n"
             )
             st.session_state.chat_history.append(("assistant", msg))
             st.rerun()
